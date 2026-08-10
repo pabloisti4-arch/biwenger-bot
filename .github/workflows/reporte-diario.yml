@@ -1,0 +1,99 @@
+name: Reporte diario Biwenger
+
+# Modo propuesta: este workflow SOLO lee la API de Biwenger, analiza y manda un
+# correo. El unico POST de todo el proyecto es el login (auth.py). No puja, no
+# vende, no ficha, no ejecuta clausulas.
+
+on:
+  schedule:
+    # GitHub Actions solo admite cron en UTC, sin zonas horarias. Para dar en
+    # las 8:15 de Madrid todo el ano hacen falta las dos horas, porque Espana
+    # cambia de UTC+2 (verano) a UTC+1 (invierno):
+    - cron: "15 6 * * *"   # 08:15 en Madrid con horario de verano (CEST)
+    - cron: "15 7 * * *"   # 08:15 en Madrid con horario de invierno (CET)
+  workflow_dispatch:        # ejecucion manual, util para probar
+
+# Una ejecucion a la vez: dos runs simultaneos se pisarian al commitear.
+concurrency:
+  group: reporte-diario
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # necesario para commitear la foto de precios
+
+jobs:
+  reporte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # Las dos entradas de cron disparan cada dia, pero solo una cae a las 8
+      # de la manana en Madrid. Esta puerta descarta la otra. La ejecucion
+      # manual pasa siempre.
+      - name: Comprobar que en Madrid son las 8
+        id: puerta
+        run: |
+          HORA=$(python -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Europe/Madrid')).strftime('%H:%M %Z'))")
+          H=$(python -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Europe/Madrid')).hour)")
+          echo "En Madrid son las $HORA"
+          if [ "$H" = "8" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "seguir=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "seguir=no" >> "$GITHUB_OUTPUT"
+            echo "No son las 8 en Madrid: este disparo se descarta." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Generar y enviar el reporte
+        if: steps.puerta.outputs.seguir == 'si'
+        env:
+          # --- Biwenger: login programatico, sin token manual ---
+          BIWENGER_EMAIL: ${{ secrets.BIWENGER_EMAIL }}
+          BIWENGER_PASSWORD: ${{ secrets.BIWENGER_PASSWORD }}
+          # --- Correo ---
+          BIWENGER_MAIL_FROM: ${{ secrets.BIWENGER_MAIL_FROM }}
+          BIWENGER_MAIL_PASSWORD: ${{ secrets.BIWENGER_MAIL_PASSWORD }}
+          BIWENGER_MAIL_TO: ${{ secrets.BIWENGER_MAIL_TO }}
+          # --- Opcionales, como variables del repo (no son secretos) ---
+          BIWENGER_VERSION: ${{ vars.BIWENGER_VERSION }}
+          BIWENGER_LEAGUE: ${{ vars.BIWENGER_LEAGUE }}
+          BIWENGER_UNLOCK: ${{ vars.BIWENGER_UNLOCK }}
+        run: |
+          ARGS=""
+          if [ -n "$BIWENGER_UNLOCK" ]; then ARGS="--unlock=$BIWENGER_UNLOCK"; fi
+          python analyze.py --email --delay=1.5 --max-clause-requests=30 $ARGS
+
+      # La foto de precios es lo unico que tiene que sobrevivir al runner:
+      # sin esto el histórico nunca pasa de 1 dia y el detector de ventas no
+      # madura. Solo contiene ids y precios de jugadores (datos publicos).
+      - name: Guardar la foto de precios del dia
+        if: steps.puerta.outputs.seguir == 'si'
+        run: |
+          git config user.name "biwenger-bot"
+          git config user.email "biwenger-bot@users.noreply.github.com"
+          git add data/history
+          if git diff --cached --quiet; then
+            echo "Sin cambios en el histórico: nada que commitear." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git commit -m "histórico: foto de precios $(date -u +%Y-%m-%d) [skip ci]"
+            git push
+            echo "Foto de precios commiteada." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Resumen
+        if: always() && steps.puerta.outputs.seguir == 'si'
+        run: |
+          echo "### Reporte Biwenger" >> "$GITHUB_STEP_SUMMARY"
+          echo "Modo propuesta: solo lectura. No se ejecuto ninguna accion en la liga." >> "$GITHUB_STEP_SUMMARY"
+          echo "Fotos en el histórico: $(ls -1 data/history 2>/dev/null | wc -l)" >> "$GITHUB_STEP_SUMMARY"

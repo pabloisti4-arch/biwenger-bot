@@ -1,0 +1,29 @@
+# Nunca subir secretos
+.env
+*.env
+!.env.example
+
+# Volcados del modo --save y cache: pueden contener nombres de managers
+# de la liga. Se usa data/* (no data/) para poder hacer excepciones dentro.
+data/*
+
+# EXCEPCION: el histórico de precios SI se versiona. Contiene solo ids y
+# precios de jugadores -- datos publicos, ningun nombre de manager ni secreto.
+# Y en la Fase 4 el runner de GitHub Actions es efimero: si no se commitea,
+# se pierde una foto cada dia y el detector de ventas nunca madura.
+!data/history/
+
+# Los reportes generados pueden citar managers: fuera.
+reports/
+
+# Previsualizaciones de --html-out: son el reporte entero renderizado, con
+# nombres de managers dentro. Se ignoran por regla y no por acordarse de
+# borrarlas.
+*.html
+preview.html
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
