@@ -6,15 +6,11 @@ name: Reporte diario Biwenger
 
 on:
   schedule:
-    # ===== PRUEBA TEMPORAL 2026-08-11: revertir este commit al terminar =====
-    # Cada 10 minutos, solo para comprobar que el cron se dispara solo.
-    - cron: "*/10 * * * *"
     # GitHub Actions solo admite cron en UTC, sin zonas horarias. Para dar en
     # las 8:15 de Madrid todo el ano hacen falta las dos horas, porque Espana
     # cambia de UTC+2 (verano) a UTC+1 (invierno):
-    # - cron: "15 6 * * *"   # 08:15 en Madrid con horario de verano (CEST)
-    # - cron: "15 7 * * *"   # 08:15 en Madrid con horario de invierno (CET)
-    # ======================= FIN PRUEBA TEMPORAL ===========================
+    - cron: "15 6 * * *"   # 08:15 en Madrid con horario de verano (CEST)
+    - cron: "15 7 * * *"   # 08:15 en Madrid con horario de invierno (CET)
   workflow_dispatch:        # ejecucion manual, util para probar
 
 # Una ejecucion a la vez: dos runs simultaneos se pisarian al commitear.
@@ -48,15 +44,11 @@ jobs:
       # manual pasa siempre.
       - name: Comprobar que en Madrid son las 8
         id: puerta
-        env:
-          # PRUEBA TEMPORAL 2026-08-11: 11 en vez de 8 para que la puerta deje
-          # pasar el disparo de prueba. Se revierte junto con el cron.
-          HORA_OBJETIVO: "11"
         run: |
           HORA=$(python -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Europe/Madrid')).strftime('%H:%M %Z'))")
           H=$(python -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Europe/Madrid')).hour)")
           echo "En Madrid son las $HORA"
-          if [ "$H" = "${HORA_OBJETIVO:-8}" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$H" = "8" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "seguir=si" >> "$GITHUB_OUTPUT"
           else
             echo "seguir=no" >> "$GITHUB_OUTPUT"
